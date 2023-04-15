@@ -1,6 +1,12 @@
 import requests
 from bs4 import BeautifulSoup as bs
 import csv, json
+import sys, time
+
+## NUMBER OF MOVIES = m<<NUMBER OF MOVIES>>
+## YEAR = y<<YEAR>>
+## FILE NAME = n<<FILENAME>>
+## FILE TYPE = csv OR json
 
 """ SET INITIAL CONFIGURATION """
 conf = {
@@ -10,14 +16,52 @@ conf = {
     "PER_PAGE_LIST":[],
     "MOVIE_LINK":"https://www.imdb.com/search/title/?release_date=2022-01-01,2022-12-31&sort=boxoffice_gross_us,desc&start=",
     "MOVIES":[],
-    "OUT_FILE_EXISTS":False
+    "OUT_FILE_EXISTS":False,
+    "ARGS_LIST":[],
+    "FILE_NAME":"hollywood_movie",
+    "FILE_TYPE":"CSV",
+    "YEAR":"2022",
 }
 
 
 class ImdbMoviesScrapper:
-    def __init__(self, num_of_movies=conf["NUMBER OF MOVIES"], year="2022"):
-        self.num_of_movies = num_of_movies
-        self.year = year
+    
+    def __init__(self, num_of_movies=None, year=None):
+        if len(sys.argv) > 1:
+            args_list = [a.replace("'", "").strip() for a in str(sys.argv).strip("[").strip("]").split(",")]
+            conf["ARGS_LIST"].extend(args_list[1:])
+            for arg in args_list[1:]:
+                if arg.startswith("m"):
+                    try:
+                        conf["NUMBER OF MOVIES"] = int(arg.replace("m", ""))
+                    except:
+                        pass
+                elif arg.startswith("n"):
+                    conf["FILE_NAME"] = arg[1:]
+                elif arg.startswith("y"):
+                    try:
+                        conf["YEAR"] = str(int(arg.replace("y", "")))
+                    except:
+                        pass
+                elif arg == 'csv':
+                    conf["FILE_TYPE"] = "CSV"
+                elif arg == 'json':
+                    conf["FILE_TYPE"] = "JSON"
+                elif arg == 's':
+                    conf['MODE'] = "SINGLE"
+                elif arg == 'm':
+                    conf['MODE'] = "MULTIPLE"
+
+        if not num_of_movies:
+            self.num_of_movies = conf["NUMBER OF MOVIES"]
+        else:
+            self.num_of_movies = num_of_movies
+        
+        if not year:
+            self.year = conf["YEAR"]
+        else:
+            self.year = year
+
         count = 1
         while self.num_of_movies > 2:
             count = count + 1
@@ -25,7 +69,17 @@ class ImdbMoviesScrapper:
             conf["PER_PAGE_LIST"].append(self.num_of_movies + 1)
             conf["PER_PAGE_LIST"] = sorted(conf["PER_PAGE_LIST"])
 
-    """ PAGE SCRAPPING METHOD """
+
+    def get_per_page(self):
+        count = 1
+        while self.num_of_movies > 2:
+            count = count + 1
+            self.num_of_movies = self.num_of_movies - 50
+            conf["PER_PAGE_LIST"].append(self.num_of_movies + 1)
+            conf["PER_PAGE_LIST"] = sorted(conf["PER_PAGE_LIST"])
+
+
+    """ PAGE SCRAPPING """
     def movies_scrapper(self, movies_url):
         req = requests.get(movies_url).content
         res = bs(req, "html.parser")
@@ -123,10 +177,9 @@ class ImdbMoviesScrapper:
                 elif cast.startswith("Stars:"):
                     movie['stars'] = [c.replace(" \n", "") for c in cast.replace("Stars:", "").strip().split(",")]
                     
-            #print(movie, "\n\n")
             movies_data.append(movie)
-            
         return movies_data
+    
     
     """ CSV WRITER """
     def csv_writer(self, filename, data):
@@ -147,6 +200,7 @@ class ImdbMoviesScrapper:
                 for item in data:
                     writer.writerow(item)
 
+
     """ JSON WRITER """
     def json_writer(self, filename, data):
         if not conf["OUT_FILE_EXISTS"]:
@@ -161,33 +215,53 @@ class ImdbMoviesScrapper:
 
 
     """ GET SCRAPPED DATE INTO CSV FILE """
-    def to_csv(self, mode=conf['MODE'], file_name="hollywood_movies"):
+    def to_csv(self, mode=None):
         for page in conf["PER_PAGE_LIST"]:
             movies_url = f'{conf["MOVIE_LINK"]}{page}'.replace("2022", self.year)
             self.scraped_movies = self.movies_scrapper(movies_url=movies_url)
             conf["MOVIES"].extend(self.scraped_movies)
 
-            self.filename=f"{file_name}.csv"
+            self.filename=f'{conf["FILE_NAME"]}.csv'
 
-            if mode.upper() == "SINGLE":
-                
+            if not mode:
+                mode = conf['MODE']
+            if mode == "SINGLE":
                 self.csv_writer(filename=self.filename, data=self.scraped_movies)
-        if mode.upper() == conf['MODE']:
+        if not mode:
+            mode = conf['MODE']
+        if mode.upper() == "MULTIPLE":
             self.csv_writer(filename=self.filename, data=conf["MOVIES"])
 
-        print(f'Completed : {len(conf["MOVIES"])} Movies Scrapped to {file_name}.csv')
+        print(f'Completed : {len(conf["MOVIES"])} Movies Scrapped to {self.filename}')
 
 
     """ GET SCRAPPED DATE INTO JSON FILE """
-    def to_json(self, mode=conf['MODE'], file_name="hollywod_movies"):
+    def to_json(self, mode=None):
         for page in conf["PER_PAGE_LIST"]:
             movies_url = f'{conf["MOVIE_LINK"]}{page}'
             self.scraped_movies = self.movies_scrapper(movies_url=movies_url)
             conf["MOVIES"].extend(self.scraped_movies)
+            
+            self.filename=f'{conf["FILE_NAME"]}'
+
+            if not mode:
+                mode = conf['MODE']
 
             if mode.upper() == "SINGLE":
-                self.json_writer(filename=f"{file_name}", data=self.scraped_movies)
-        if mode.upper() == conf['MODE']:
-            self.json_writer(filename=f"{file_name}", data=conf["MOVIES"])
+                self.json_writer(filename=self.filename, data=self.scraped_movies)
 
-        print(f'Completed : {len(conf["MOVIES"])} Movies Scrapped to {file_name}.json')
+        if not mode:
+            mode = conf['MODE']
+        if mode.upper() == "MULTIPLE":
+            self.json_writer(filename=self.filename, data=conf["MOVIES"])
+
+        print(f'Completed : {len(conf["MOVIES"])} Movies Scrapped to {self.filename}.json')
+
+
+
+x = ImdbMoviesScrapper()
+
+if conf["FILE_TYPE"] == "CSV":
+    x.to_csv()
+else:
+    x.to_json()
